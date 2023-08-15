@@ -1,20 +1,17 @@
 package com.retooling.pursalegg.service;
 
-import java.util.ArrayList;
+import java.text.ParseException;
 import java.util.Date;
 import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
 
 import com.retooling.pursalegg.entity.Egg;
 import com.retooling.pursalegg.entity.Farm;
 import com.retooling.pursalegg.entity.PurchaseEgg;
-import com.retooling.pursalegg.exception.PurchaseEggException;
 import com.retooling.pursalegg.exception.PurchaseEggLimitException;
 import com.retooling.pursalegg.exception.PurchaseEggMoneyException;
 import com.retooling.pursalegg.repository.PurchaseEggRepository;
@@ -29,9 +26,6 @@ public class PurchaseEggServiceImpl implements PurchaseEggService {
 
 	@Autowired
 	private ApiCall apiCall;
-
-	@Value("${api.microservice.use-date-simulator}")
-	private boolean useDateSimulator;
 	
 	@Override
 	public List<PurchaseEgg> getAllPurchaseEggs() {
@@ -46,84 +40,61 @@ public class PurchaseEggServiceImpl implements PurchaseEggService {
 	}
 
 	@Override
-	public PurchaseEgg generatePurchaseEgg(PurchaseEgg purchaseEgg) throws PurchaseEggException, PurchaseEggMoneyException, PurchaseEggLimitException {
+	public PurchaseEgg generatePurchaseEgg(PurchaseEgg purchaseEgg) throws PurchaseEggLimitException, PurchaseEggMoneyException, ParseException {
 		logger.info("Service - Calling method generatePurchaseEgg...");
 		
-		Farm farm = null;
-		try {
-			farm = apiCall.getFarm(purchaseEgg.getFarmId());
-		} catch (Exception ex) {
-			throw new PurchaseEggException(ex.getMessage());
-		}
+		Farm farm = apiCall.getFarm(purchaseEgg.getFarmId());
+		List<Egg> eggs = apiCall.getEggs(purchaseEgg.getFarmId());
 		
-		List<Egg> eggs = null;
-		try {
-			eggs = apiCall.getEggs(purchaseEgg.getFarmId());
-		} catch (HttpClientErrorException.NotFound ex) {
-			eggs = new ArrayList<>();
-		} catch (Exception ex) {
-			throw new PurchaseEggException(ex.getMessage());
-		}
-		
-		if ((purchaseEgg.getUnits() + eggs.size()) > farm.getEggLimit()) {
-			logger.info("La cantidad de huevos a comprar supera el límite de la granja.");
-			throw new PurchaseEggLimitException("La cantidad de huevos a comprar supera el límite de la granja.");
-		}	
+		validateEggLimit(purchaseEgg.getUnits(), eggs.size(), farm.getEggLimit());
+		validateFarmMoney(purchaseEgg.getTotalAmount(), farm.getMoney());
 			
-		if (purchaseEgg.getTotalAmount() > farm.getMoney()) {
-			logger.info("La cantidad de dinero utilizada supera el monto disponible.");
-			throw new PurchaseEggMoneyException("La cantidad de dinero utilizada supera el monto disponible.");
-		}
-		
-		Date currentDate;
-		if (useDateSimulator) {
-			try {
-				currentDate = apiCall.getDate();
-			} catch (Exception ex) {
-				throw new PurchaseEggException(ex.getMessage());
-			}
-		} else {
-			currentDate = new Date();
-		}
+		Date currentDate = apiCall.getDate();
 		
 		//Se agregan huevos
 		for(int indice=0;indice<purchaseEgg.getUnits();indice++) {
 			Egg egg = new Egg();
-			egg.setFarmId(purchaseEgg.getFarmId());
-			EggState eggAvailable = EggState.Available;
-			egg.setState(eggAvailable.getState());
-			egg.setCreationDate(currentDate);
-			EggOrigin eggOrigin = EggOrigin.Bought;
-			egg.setOrigin(eggOrigin.getOrigin());
-			egg.setLastStateChangeDate(egg.getCreationDate());
-			try {
-				egg = apiCall.insertEgg(egg);
-				logger.info("Compra - Se agrega huevo: [" + egg.getEggId() + "]");
-			} catch (Exception ex) {
-				throw new PurchaseEggException(ex.getMessage());
-			}
+			copyEggData(egg, purchaseEgg, currentDate);
+			egg = apiCall.insertEgg(egg);
+			logger.info("Compra - Se agrega huevo: [" + egg.getEggId() + "]");
 		}
 
 		//Se actualiza dinero de granja
 		farm.setMoney(farm.getMoney() - purchaseEgg.getTotalAmount());
-		try {
-			apiCall.updateFarm(farm);
-		} catch (Exception ex) {
-			throw new PurchaseEggException(ex.getMessage());
-		}
+		apiCall.updateFarm(farm);
 		
 		//Se genera reporte en caso de alcanzar el limite
 		if ((purchaseEgg.getUnits() + eggs.size()) == farm.getEggLimit()) {
-			try {
-				apiCall.generateReport(purchaseEgg.getFarmId());
-			} catch (Exception ex) {
-				throw new PurchaseEggException(ex.getMessage());
-			}
+			apiCall.generateReport(purchaseEgg.getFarmId());
 		}
 		
 		purchaseEgg.setPurchaseDate(currentDate);
 		
 		return this.savePurchaseEgg(purchaseEgg);
+	}
+	
+	private void validateEggLimit(long units, int eggsCount, long eggLimit) throws PurchaseEggLimitException {
+		if ((units + eggsCount) > eggLimit) {
+			logger.info("La cantidad de huevos a comprar supera el límite de la granja.");
+			throw new PurchaseEggLimitException("La cantidad de huevos a comprar supera el límite de la granja.");
+		}	
+	}
+	
+	private void validateFarmMoney(double totalAmount, double money) throws PurchaseEggMoneyException {
+		if (totalAmount > money) {
+			logger.info("La cantidad de dinero utilizada supera el monto disponible.");
+			throw new PurchaseEggMoneyException("La cantidad de dinero utilizada supera el monto disponible.");
+		}
+	}
+	
+	private void copyEggData(Egg egg, PurchaseEgg purchaseEgg, Date currentDate) {
+		egg.setFarmId(purchaseEgg.getFarmId());
+		EggState eggAvailable = EggState.Available;
+		egg.setState(eggAvailable.getState());
+		egg.setCreationDate(currentDate);
+		EggOrigin eggOrigin = EggOrigin.Bought;
+		egg.setOrigin(eggOrigin.getOrigin());
+		egg.setLastStateChangeDate(egg.getCreationDate());
 	}
 	
 }

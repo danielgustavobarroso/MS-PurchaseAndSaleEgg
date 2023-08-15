@@ -1,20 +1,18 @@
 package com.retooling.pursalegg.service;
 
-import java.util.ArrayList;
+import java.text.ParseException;
 import java.util.Date;
 import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.retooling.pursalegg.entity.Egg;
 import com.retooling.pursalegg.entity.Farm;
 import com.retooling.pursalegg.entity.SaleEgg;
 import com.retooling.pursalegg.exception.SaleEggAmountException;
-import com.retooling.pursalegg.exception.SaleEggException;
 import com.retooling.pursalegg.repository.SaleEggRepository;
 
 @Service
@@ -27,9 +25,6 @@ public class SaleEggServiceImpl implements SaleEggService {
 
 	@Autowired
 	private ApiCall apiCall;
-
-	@Value("${api.microservice.use-date-simulator}")
-	private boolean useDateSimulator;
 	
 	@Override
 	public List<SaleEgg> getAllSaleEggs() {
@@ -44,27 +39,14 @@ public class SaleEggServiceImpl implements SaleEggService {
 	}
 
 	@Override
-	public SaleEgg generateSaleEgg(SaleEgg saleEgg) throws SaleEggException, SaleEggAmountException {
+	public SaleEgg generateSaleEgg(SaleEgg saleEgg) throws SaleEggAmountException, ParseException {
 		logger.info("Service - Calling method generateSaleEgg...");
 		
-		List<Egg> eggs = new ArrayList<Egg>();
-		eggs = apiCall.getEggs(saleEgg.getFarmId());
+		List<Egg> eggs = apiCall.getEggs(saleEgg.getFarmId());
 		
-		if (saleEgg.getUnits() > eggs.size()) {
-			logger.info("La cantidad de huevos que se desea vender es mayor a la disponible");
-			throw new SaleEggAmountException("La cantidad de huevos que se desea vender es mayor a la disponible.");
-		}
+		validateEggAvailable(saleEgg.getUnits(), eggs.size());
 		
-		Date currentDate;
-		if (useDateSimulator) {
-			try {
-				currentDate = apiCall.getDate();
-			} catch (Exception ex) {
-				throw new SaleEggException(ex.getMessage());
-			}
-		} else {
-			currentDate = new Date();
-		}
+		Date currentDate = apiCall.getDate();
 		
 		for(int indice=0;indice<saleEgg.getUnits();indice++) {
 			EggState eggSold = EggState.Sold;
@@ -74,30 +56,19 @@ public class SaleEggServiceImpl implements SaleEggService {
 			logger.info("Venta - Se actualiza estado del huevo con id [" + eggs.get(indice).getEggId() + "] a Vendido");
 		}
 		
-		Farm farm = null;
-		try {
-			farm = apiCall.getFarm(saleEgg.getFarmId());
-		} catch (Exception ex) {
-			throw new SaleEggException(ex.getMessage());
-		}
-
+		Farm farm = apiCall.getFarm(saleEgg.getFarmId());
 		farm.setMoney(farm.getMoney() + saleEgg.getTotalAmount());
+		apiCall.updateFarm(farm);
 		
-		try {
-			apiCall.updateFarm(farm);
-		} catch (Exception ex) {
-			throw new SaleEggException(ex.getMessage());
-		}
-
-		if (useDateSimulator) {
-			try {
-				saleEgg.setSaleDate(apiCall.getDate());
-			} catch (Exception ex) {
-				throw new SaleEggException(ex.getMessage());
-			}
-		}
-		
+		saleEgg.setSaleDate(currentDate);
 		return this.saveSaleEgg(saleEgg);
+	}
+	
+	private void validateEggAvailable(long units, int eggsCount) throws SaleEggAmountException {
+		if (units > eggsCount) {
+			logger.info("La cantidad de huevos que se desea vender es mayor a la disponible");
+			throw new SaleEggAmountException("La cantidad de huevos que se desea vender es mayor a la disponible.");
+		}
 	}
 	
 }

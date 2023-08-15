@@ -1,5 +1,6 @@
 package com.retooling.pursalegg.controller;
 
+import java.text.ParseException;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.retooling.pursalegg.entity.SaleEgg;
 import com.retooling.pursalegg.exception.SaleEggAmountException;
-import com.retooling.pursalegg.exception.SaleEggException;
 import com.retooling.pursalegg.exception.SaleValidationErrorException;
 import com.retooling.pursalegg.service.SaleEggService;
 
@@ -42,7 +42,7 @@ public class SaleEggController {
 	//Guardar una venta de huevos
 	@PostMapping("sale-egg")
 	public ResponseEntity<SaleEgg> generateSaleEgg(@Valid @RequestBody SaleEgg saleEgg,
-			BindingResult bindingResult) throws SaleEggException, SaleEggAmountException, SaleValidationErrorException {		
+			BindingResult bindingResult) throws SaleValidationErrorException, SaleEggAmountException, ParseException {		
 		logger.info("Controller - Calling method generateSaleEgg...");
 		if (bindingResult.hasErrors()) {
 			String message = new String();

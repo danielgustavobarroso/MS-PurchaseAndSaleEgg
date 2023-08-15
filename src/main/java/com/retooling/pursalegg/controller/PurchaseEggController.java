@@ -1,5 +1,6 @@
 package com.retooling.pursalegg.controller;
 
+import java.text.ParseException;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -16,7 +17,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.retooling.pursalegg.entity.PurchaseEgg;
-import com.retooling.pursalegg.exception.PurchaseEggException;
 import com.retooling.pursalegg.exception.PurchaseEggLimitException;
 import com.retooling.pursalegg.exception.PurchaseEggMoneyException;
 import com.retooling.pursalegg.exception.PurchaseValidationErrorException;
@@ -43,8 +43,8 @@ public class PurchaseEggController {
 	//Guardar una compra de huevos
 	@PostMapping("purchase-egg")
 	public ResponseEntity<PurchaseEgg> generatePurchaseEgg(@Valid @RequestBody PurchaseEgg purchaseEgg,
-			BindingResult bindingResult) throws PurchaseEggException, PurchaseEggMoneyException,
-			PurchaseEggLimitException, PurchaseValidationErrorException {		
+			BindingResult bindingResult) throws PurchaseValidationErrorException, PurchaseEggLimitException,
+			PurchaseEggMoneyException, ParseException {		
 		logger.info("Controller - Calling method generatePurchaseEgg...");
 		if (bindingResult.hasErrors()) {
 			String message = new String();
@@ -59,5 +59,5 @@ public class PurchaseEggController {
 		}
 		return new ResponseEntity<>(service.generatePurchaseEgg(purchaseEgg), HttpStatus.OK);
 	}
-		
+
 }
